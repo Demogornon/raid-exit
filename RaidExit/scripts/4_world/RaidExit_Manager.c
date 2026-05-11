@@ -1,3 +1,34 @@
+class RaidExitCondition
+{
+    // Тип проверки: 0 = предмет в руках, 1 = предмет в инвентаре
+    int conditionType;
+    
+    // Класс предмета для проверки (например "AKM", "Ammobox_308WinTracer")
+    string itemClass;
+    
+    // Сообщение об ошибке (ключ из stringtable)
+    string errorMessage;
+    
+    void RaidExitCondition(int type, string item, string error)
+    {
+        conditionType = type;
+        itemClass = item;
+        errorMessage = error;
+    }
+}
+
+class RaidExitConditionalZone
+{
+    vector position;
+    ref array<ref RaidExitCondition> conditions;
+    
+    void RaidExitConditionalZone(vector pos)
+    {
+        position = pos;
+        conditions = new array<ref RaidExitCondition>;
+    }
+}
+
 class RaidExitZone
 {
     vector position;
@@ -17,6 +48,20 @@ class RaidExitNoBackpackZone
     void RaidExitNoBackpackZone(vector pos)
     {
         position = pos;
+    }
+}
+
+class RaidExitNoItemInHandsZone
+{
+    vector position;
+    string requiredItemClass;
+    string errorMessage;
+
+    void RaidExitNoItemInHandsZone(vector pos, string itemClass, string error)
+    {
+        position = pos;
+        requiredItemClass = itemClass;
+        errorMessage = error;
     }
 }
 
@@ -51,12 +96,16 @@ class RaidExitConfigManager
     // Конфигурируемые данные
     ref array<ref RaidExitZone> RaidExitZones = new array<ref RaidExitZone>;
     ref array<ref RaidExitNoBackpackZone> RaidExitNoBackpackZones = new array<ref RaidExitNoBackpackZone>;
+    ref array<ref RaidExitNoItemInHandsZone> RaidExitNoItemInHandsZones = new array<ref RaidExitNoItemInHandsZone>;
     ref array<ref RaidExitWithMoneyZone> RaidExitWithMoneyZones = new array<ref RaidExitWithMoneyZone>;
+    ref array<ref RaidExitConditionalZone> RaidExitConditionalZones = new array<ref RaidExitConditionalZone>;
 
     // 🔹 Новое: массив координат телепорта
     ref array<vector> TeleportPositions = new array<vector>;
     ref array<vector> TeleportPositionsBP = new array<vector>;
     ref array<vector> TeleportPositionsM = new array<vector>;
+    ref array<vector> TeleportPositionsConditional = new array<vector>;
+    ref array<vector> TeleportPositionsNoItemInHands = new array<vector>;
 
     void RaidExitConfigManager()
     {
@@ -100,6 +149,7 @@ class RaidExitConfigManager
         // Примерные данные
         RaidExitZones.Insert(new RaidExitZone("5000 0 5000", 10));
         RaidExitNoBackpackZones.Insert(new RaidExitNoBackpackZone("5100 0 5000"));
+        RaidExitNoItemInHandsZones.Insert(new RaidExitNoItemInHandsZone("5150 0 5000", "AKM", "#raidexit_noiteminhands"));
         RaidExitWithMoneyZones.Insert(new RaidExitWithMoneyZone("5200 0 5000", 5000));
 
         // Примерные координаты телепорта
@@ -109,6 +159,10 @@ class RaidExitConfigManager
         TeleportPositionsBP.Insert("6000 0 6000");
         TeleportPositionsM.Insert("4000 0 6000");
         TeleportPositionsM.Insert("6000 0 6000");
+        TeleportPositionsConditional.Insert("4000 0 6000");
+        TeleportPositionsConditional.Insert("6000 0 6000");
+        TeleportPositionsNoItemInHands.Insert("4000 0 6000");
+        TeleportPositionsNoItemInHands.Insert("6000 0 6000");
     }
 
     // ====== СПАВН ВСЕХ ОБЪЕКТОВ ======
@@ -124,8 +178,14 @@ class RaidExitConfigManager
         foreach (RaidExitNoBackpackZone zone2 : RaidExitNoBackpackZones)
             SpawnRaidExitNoBackPack(zone2);
 
+        foreach (RaidExitNoItemInHandsZone zone5 : RaidExitNoItemInHandsZones)
+            SpawnRaidExitNoItemInHands(zone5);
+
         foreach (RaidExitWithMoneyZone zone3 : RaidExitWithMoneyZones)
             SpawnRaidExitWithMoney(zone3);
+        
+        foreach (RaidExitConditionalZone zone4 : RaidExitConditionalZones)
+            SpawnRaidExitConditional(zone4);
     }
 
     // --- RaidExit с триггером ---
@@ -169,6 +229,20 @@ class RaidExitConfigManager
             Print("[RaidExitManager] Spawned RaidExit_NoBackPack at " + pos);
     }
 
+    // --- RaidExit_NoItemInHands ---
+    void SpawnRaidExitNoItemInHands(RaidExitNoItemInHandsZone zone)
+    {
+        vector pos = zone.position;
+
+        RaidExit_NoItemInHands obj = RaidExit_NoItemInHands.Cast(GetGame().CreateObjectEx("RaidExit_NoItemInHands", pos, ECE_SETUP));
+        if (obj)
+        {
+            obj.SetRequiredItem(zone.requiredItemClass);
+            obj.SetErrorMessage(zone.errorMessage);
+            Print("[RaidExitManager] Spawned RaidExit_NoItemInHands at " + pos + " for item: " + zone.requiredItemClass);
+        }
+    }
+
     // --- RaidExit_WithMoney ---
     void SpawnRaidExitWithMoney(RaidExitWithMoneyZone zone)
     {
@@ -180,6 +254,19 @@ class RaidExitConfigManager
         {
             obj.SetExitPrice(cost)
             Print("[RaidExitManager] Spawned RaidExit_WithMoney at " + pos + " with price: " + cost);
+        }
+    }
+
+    // --- RaidExit_Conditional ---
+    void SpawnRaidExitConditional(RaidExitConditionalZone zone)
+    {
+        vector pos = zone.position;
+
+        RaidExit_Conditional obj = RaidExit_Conditional.Cast(GetGame().CreateObjectEx("RaidExit_Conditional", pos, ECE_SETUP));
+        if (obj)
+        {
+            obj.SetConditions(zone.conditions);
+            Print("[RaidExitManager] Spawned RaidExit_Conditional at " + pos + " with " + zone.conditions.Count() + " conditions");
         }
     }
 
@@ -212,6 +299,28 @@ class RaidExitConfigManager
         {
             int index = Math.RandomInt(0, TeleportPositionsM.Count());
             return TeleportPositionsM[index];
+        }
+
+        return "0 0 0";
+    }
+    
+    vector GetRandomTeleportPositionConditional()
+    {
+        if (TeleportPositionsConditional && TeleportPositionsConditional.Count() > 0)
+        {
+            int index = Math.RandomInt(0, TeleportPositionsConditional.Count());
+            return TeleportPositionsConditional[index];
+        }
+
+        return "0 0 0";
+    }
+    
+    vector GetRandomTeleportPositionNoItemInHands()
+    {
+        if (TeleportPositionsNoItemInHands && TeleportPositionsNoItemInHands.Count() > 0)
+        {
+            int index = Math.RandomInt(0, TeleportPositionsNoItemInHands.Count());
+            return TeleportPositionsNoItemInHands[index];
         }
 
         return "0 0 0";

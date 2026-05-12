@@ -49,17 +49,12 @@ class CfgVehicles
 		scope=1;
 		model="\RaidExit\empty.p3d";
 	};
-	class RaidExit_NoItemInHands: HouseNoDestruct
-	{
-		scope=1;
-		model="\RaidExit\empty.p3d";
-	};
 	class RaidExit_WithMoney: HouseNoDestruct
 	{
 		scope=1;
 		model="\RaidExit\empty.p3d";
 	};
-	class RaidExit_Conditional: HouseNoDestruct
+	class RaidExit_WithItem: HouseNoDestruct
 	{
 		scope=1;
 		model="\RaidExit\empty.p3d";

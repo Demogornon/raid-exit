@@ -1,34 +1,3 @@
-class RaidExitCondition
-{
-    // Тип проверки: 0 = предмет в руках, 1 = предмет в инвентаре
-    int conditionType;
-    
-    // Класс предмета для проверки (например "AKM", "Ammobox_308WinTracer")
-    string itemClass;
-    
-    // Сообщение об ошибке (ключ из stringtable)
-    string errorMessage;
-    
-    void RaidExitCondition(int type, string item, string error)
-    {
-        conditionType = type;
-        itemClass = item;
-        errorMessage = error;
-    }
-}
-
-class RaidExitConditionalZone
-{
-    vector position;
-    ref array<ref RaidExitCondition> conditions;
-    
-    void RaidExitConditionalZone(vector pos)
-    {
-        position = pos;
-        conditions = new array<ref RaidExitCondition>;
-    }
-}
-
 class RaidExitZone
 {
     vector position;
@@ -51,20 +20,6 @@ class RaidExitNoBackpackZone
     }
 }
 
-class RaidExitNoItemInHandsZone
-{
-    vector position;
-    string requiredItemClass;
-    string errorMessage;
-
-    void RaidExitNoItemInHandsZone(vector pos, string itemClass, string error)
-    {
-        position = pos;
-        requiredItemClass = itemClass;
-        errorMessage = error;
-    }
-}
-
 class RaidExitWithMoneyZone
 {
     vector position;
@@ -74,6 +29,26 @@ class RaidExitWithMoneyZone
     {
         position = pos;
         price = cost;
+    }
+}
+class RaidExitWithItemZone
+{
+    string item;
+    int pause;
+    string message1;
+    string message2;
+	
+	ref array<vector> startPositions = new array<vector>;
+	ref array<vector> teleportPositions = new array<vector>;
+	
+    void RaidExitWithItemZone(array<vector> pos, array<vector> teleportpos, string itemneed, int paused, string m1, string m2)
+    {
+        startPositions = pos;
+        teleportPositions = teleportpos;
+        item = itemneed;
+        pause = paused;
+		message1 = m1;
+		message2 = m2;
     }
 }
 
@@ -87,6 +62,16 @@ static ref RaidExitConfigManager GetRaidExitConfigManager()
     return g_RaidExitConfigManager;
 }
 
+static ref array<ref RaidExitstarter> g_RaidExitstarters;
+static ref array<ref RaidExitstarter> GetRaidExitstarters()
+{
+    if (!g_RaidExitstarters)
+        g_RaidExitstarters = new array<ref RaidExitstarter>;
+
+    return g_RaidExitstarters;
+}
+
+
 // ===== ОСНОВНОЙ КЛАСС =====
 class RaidExitConfigManager
 {
@@ -96,16 +81,13 @@ class RaidExitConfigManager
     // Конфигурируемые данные
     ref array<ref RaidExitZone> RaidExitZones = new array<ref RaidExitZone>;
     ref array<ref RaidExitNoBackpackZone> RaidExitNoBackpackZones = new array<ref RaidExitNoBackpackZone>;
-    ref array<ref RaidExitNoItemInHandsZone> RaidExitNoItemInHandsZones = new array<ref RaidExitNoItemInHandsZone>;
     ref array<ref RaidExitWithMoneyZone> RaidExitWithMoneyZones = new array<ref RaidExitWithMoneyZone>;
-    ref array<ref RaidExitConditionalZone> RaidExitConditionalZones = new array<ref RaidExitConditionalZone>;
-
-    // 🔹 Новое: массив координат телепорта
+    ref array<ref RaidExitWithItemZone> RaidExitWithItemZones = new array<ref RaidExitWithItemZone>;
+	
+	
     ref array<vector> TeleportPositions = new array<vector>;
     ref array<vector> TeleportPositionsBP = new array<vector>;
     ref array<vector> TeleportPositionsM = new array<vector>;
-    ref array<vector> TeleportPositionsConditional = new array<vector>;
-    ref array<vector> TeleportPositionsNoItemInHands = new array<vector>;
 
     void RaidExitConfigManager()
     {
@@ -114,20 +96,23 @@ class RaidExitConfigManager
     }
 
     // ====== ЗАГРУЗКА / СОХРАНЕНИЕ ======
-    void Load()
+	void Load()
+{
+    CreateDefault(); 
+
+    if (FileExist(CONFIG_PATH))
     {
-        if (!FileExist(CONFIG_PATH))
-        {
-            CreateDefault();
-            Save();
-            Print("[RaidExitConfig] Default settings created!");
-        }
-        else
-        {
-            JsonFileLoader<RaidExitConfigManager>.JsonLoadFile(CONFIG_PATH, this);
-            Print("[RaidExitConfig] Settings loaded!");
-        }
+        JsonFileLoader<RaidExitConfigManager>.JsonLoadFile(CONFIG_PATH, this);
+        Print("[RaidExitConfig] Settings loaded and merged!");
+        
+        Save(); 
     }
+    else
+    {
+        Save();
+        Print("[RaidExitConfig] Default settings created!");
+    }
+}
 
     void Save()
     {
@@ -149,7 +134,6 @@ class RaidExitConfigManager
         // Примерные данные
         RaidExitZones.Insert(new RaidExitZone("5000 0 5000", 10));
         RaidExitNoBackpackZones.Insert(new RaidExitNoBackpackZone("5100 0 5000"));
-        RaidExitNoItemInHandsZones.Insert(new RaidExitNoItemInHandsZone("5150 0 5000", "AKM", "#raidexit_noiteminhands"));
         RaidExitWithMoneyZones.Insert(new RaidExitWithMoneyZone("5200 0 5000", 5000));
 
         // Примерные координаты телепорта
@@ -159,10 +143,26 @@ class RaidExitConfigManager
         TeleportPositionsBP.Insert("6000 0 6000");
         TeleportPositionsM.Insert("4000 0 6000");
         TeleportPositionsM.Insert("6000 0 6000");
-        TeleportPositionsConditional.Insert("4000 0 6000");
-        TeleportPositionsConditional.Insert("6000 0 6000");
-        TeleportPositionsNoItemInHands.Insert("4000 0 6000");
-        TeleportPositionsNoItemInHands.Insert("6000 0 6000");
+		
+		// Профайл 1: 2 старта, 1 телепорт, требуемый предмет
+    array<vector> s1 = new array<vector>;
+    s1.Insert(Vector(1200, 0, 3400));
+    s1.Insert(Vector(1210, 0, 3410));
+
+    array<vector> t1 = new array<vector>;
+    t1.Insert(Vector(5000, 0, 5000));
+
+    RaidExitWithItemZones.Insert(new RaidExitWithItemZone(s1, t1, "Bandage", 100,"Шапка сообщения","Тело сообщения"));
+
+    // Профайл 2: 1 старт, 1 телепорт
+    array<vector> s2 = new array<vector>;
+    s2.Insert(Vector(8000, 0, 2000));
+
+    array<vector> t2 = new array<vector>;
+    t2.Insert(Vector(1000, 0, 8000));
+
+    RaidExitWithItemZones.Insert(new RaidExitWithItemZone(s2, t2, "AmmoBox", 100,"Шапка сообщения","Тело сообщения"));
+		
     }
 
     // ====== СПАВН ВСЕХ ОБЪЕКТОВ ======
@@ -178,14 +178,10 @@ class RaidExitConfigManager
         foreach (RaidExitNoBackpackZone zone2 : RaidExitNoBackpackZones)
             SpawnRaidExitNoBackPack(zone2);
 
-        foreach (RaidExitNoItemInHandsZone zone5 : RaidExitNoItemInHandsZones)
-            SpawnRaidExitNoItemInHands(zone5);
-
         foreach (RaidExitWithMoneyZone zone3 : RaidExitWithMoneyZones)
             SpawnRaidExitWithMoney(zone3);
-        
-        foreach (RaidExitConditionalZone zone4 : RaidExitConditionalZones)
-            SpawnRaidExitConditional(zone4);
+        foreach (RaidExitWithItemZone zone4 : RaidExitWithItemZones)
+            SpawnRaidExitWithItemZone(zone4);
     }
 
     // --- RaidExit с триггером ---
@@ -229,20 +225,6 @@ class RaidExitConfigManager
             Print("[RaidExitManager] Spawned RaidExit_NoBackPack at " + pos);
     }
 
-    // --- RaidExit_NoItemInHands ---
-    void SpawnRaidExitNoItemInHands(RaidExitNoItemInHandsZone zone)
-    {
-        vector pos = zone.position;
-
-        RaidExit_NoItemInHands obj = RaidExit_NoItemInHands.Cast(GetGame().CreateObjectEx("RaidExit_NoItemInHands", pos, ECE_SETUP));
-        if (obj)
-        {
-            obj.SetRequiredItem(zone.requiredItemClass);
-            obj.SetErrorMessage(zone.errorMessage);
-            Print("[RaidExitManager] Spawned RaidExit_NoItemInHands at " + pos + " for item: " + zone.requiredItemClass);
-        }
-    }
-
     // --- RaidExit_WithMoney ---
     void SpawnRaidExitWithMoney(RaidExitWithMoneyZone zone)
     {
@@ -256,18 +238,28 @@ class RaidExitConfigManager
             Print("[RaidExitManager] Spawned RaidExit_WithMoney at " + pos + " with price: " + cost);
         }
     }
-
-    // --- RaidExit_Conditional ---
-    void SpawnRaidExitConditional(RaidExitConditionalZone zone)
+    void SpawnRaidExitWithItemZone(RaidExitWithItemZone zone)
     {
-        vector pos = zone.position;
+		
+    int pause=zone.pause;
+	if (pause==0)
+	{
+    string item=zone.item;
+	ref array<vector> teleportPositions = zone.teleportPositions;
+    vector pos = GetRandomVectorPosition(zone.startPositions);
 
-        RaidExit_Conditional obj = RaidExit_Conditional.Cast(GetGame().CreateObjectEx("RaidExit_Conditional", pos, ECE_SETUP));
+        RaidExit_WithItem obj = RaidExit_WithItem.Cast(GetGame().CreateObjectEx("RaidExit_WithItem", pos, ECE_SETUP));
         if (obj)
         {
-            obj.SetConditions(zone.conditions);
-            Print("[RaidExitManager] Spawned RaidExit_Conditional at " + pos + " with " + zone.conditions.Count() + " conditions");
+            obj.SetExitItem(item);
+            obj.SetTPpoints(teleportPositions);
+            Print("[RaidExitManager] Spawned RaidExit_WithItem at " + pos + " with item: " + item);
         }
+	}
+	else
+	{
+		new RaidExitstarter(zone);
+	}
     }
 
     // ====== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ======
@@ -303,26 +295,66 @@ class RaidExitConfigManager
 
         return "0 0 0";
     }
-    
-    vector GetRandomTeleportPositionConditional()
+    vector GetRandomVectorPosition(array<vector> apos)
     {
-        if (TeleportPositionsConditional && TeleportPositionsConditional.Count() > 0)
+        if (apos && apos.Count() > 0)
         {
-            int index = Math.RandomInt(0, TeleportPositionsConditional.Count());
-            return TeleportPositionsConditional[index];
+            int index = Math.RandomInt(0, apos.Count());
+            return apos[index];
         }
 
         return "0 0 0";
     }
-    
-    vector GetRandomTeleportPositionNoItemInHands()
-    {
-        if (TeleportPositionsNoItemInHands && TeleportPositionsNoItemInHands.Count() > 0)
-        {
-            int index = Math.RandomInt(0, TeleportPositionsNoItemInHands.Count());
-            return TeleportPositionsNoItemInHands[index];
-        }
+}
 
-        return "0 0 0";
-    }
+class RaidExitstarter
+{
+	RaidExitWithItemZone zone; 
+    int m_pause;
+	void RaidExitstarter(RaidExitWithItemZone z)
+	{
+	RaidExitWithItemZone zone=z; 
+    m_pause=zone.pause;
+	
+	GetRaidExitstarters().Insert(this);	
+	WaitPause();
+	}
+	void WaitPause()
+	{
+
+		int currentTime=GetGame().GetTime()/1000; 
+		
+		if(currentTime>m_pause)
+		{
+			Start();
+		}
+		else
+		{
+		g_Game.GetCallQueue( CALL_CATEGORY_SYSTEM ).CallLater(WaitPause, 60000, false);
+		}
+	}
+	
+	
+	void Start()
+	{
+	string item=zone.item;
+    string message1=zone.message1;
+    string message2=zone.message2;
+	
+	array<vector> startPositions = zone.startPositions;
+
+		if (!startPositions || startPositions.Count() == 0) return;
+		vector pos = GetRaidExitConfigManager().GetRandomVectorPosition(startPositions);
+        RaidExit_WithItem obj = RaidExit_WithItem.Cast(GetGame().CreateObjectEx("RaidExit_WithItem", pos, ECE_SETUP));
+        if (obj)
+        {
+            obj.SetExitItem(item);
+            obj.SetTPpoints(zone.teleportPositions);
+			
+			NotificationSystem.SendNotificationToPlayerIdentityExtended(NULL, 5, message1, message2);
+
+            Print("[RaidExitManager] Spawned RaidExit_WithItem at " + pos + " with item: " + item+ " with pause: "+m_pause);
+        }
+		GetRaidExitstarters().RemoveItem(this);
+	}
 }
